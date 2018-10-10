@@ -85,16 +85,16 @@
 ;; (require 'make-tcl-abbrevs)
 
 ;; (add-hook 'tcl-mode-hook
-;; 	  (lambda()
-;; 	    (define-key tcl-mode-map [delete] 'delete-forward-char)
-;; 	    (define-key tcl-mode-map "\C-ch"  'company-netlist--hier)
-;; 	    (define-key tcl-mode-map "\C-cc"  'company-netlist--cells)
-;; 	    (define-key tcl-mode-map "\C-cn"  'company-netlist--nets)
-;; 	    (define-key tcl-mode-map "\C-cp"  'company-netlist--ports)
-;; 	    (define-key tcl-mode-map "\C-ct"  'company-syntcl--tcl)
-;; 	    (add-to-list (make-local-variable 'company-backends)
-;; 			 '(company-netlist company-syntcl company-etags))
-;; 	    (set (make-local-variable 'company-idle-delay) company-netlist--idle-delay)
+;;    (lambda()
+;;      (define-key tcl-mode-map [delete] 'delete-forward-char)
+;;      (define-key tcl-mode-map "\C-ch"  'company-netlist--hier)
+;;      (define-key tcl-mode-map "\C-cc"  'company-netlist--cells)
+;;      (define-key tcl-mode-map "\C-cn"  'company-netlist--nets)
+;;      (define-key tcl-mode-map "\C-cp"  'company-netlist--ports)
+;;      (define-key tcl-mode-map "\C-ct"  'company-syntcl--tcl)
+;;      (add-to-list (make-local-variable 'company-backends)
+;;           '(company-netlist company-syntcl company-etags))
+;;      (set (make-local-variable 'company-idle-delay) company-netlist--idle-delay)
 ;;          (make-tcl-abbrevs)))
 
 ;;; Sample Keybindings
@@ -150,6 +150,7 @@
 ;;                   simplify conditionals from '(not (null var))' to 'var'
 ;; 2018-06-18 fcreed rewrote *-read-json-files, add test for embedded tabs (breaks emacs 26 JSON parser)
 ;; 2018-06-26 fcreed add "begin/end read json" messages to *--read-json-file
+;; 2018-09-19 fcreed when changing from indentation tabs to spaces, forgot to change explicit tab char in *-read-json :-(
 
 ;;; Code:
 
@@ -157,7 +158,7 @@
 (require 'cl-lib)
 (require 'ht)            ; hash table functions
 (require 's)             ; string functions
-(require 'json)		 ; to read/decode JSON data
+(require 'json)      ; to read/decode JSON data
 
 (defgroup company-netlist nil
   "Completion backend for NetlistComplete."
@@ -174,6 +175,7 @@
     (setq company-netlist-ward (getenv "WARD"))
   (setq company-netlist-ward "/nfs/pdx/disks/sdg74_0819/work/fcreed/sprspscc_tr_ww45.4") ; default
   )
+
 (defvar company-netlist-top-blk "")
 (if (getenv "block")
     (setq company-netlist-top-blk (getenv "block"))
@@ -220,8 +222,8 @@ This means you must explicitly trigger netlist completion.
 Set a delay (in seconds) to auto-trigger Netlist completion.
 NOTE: better to keep at default (nil) to avoid wrong completion type"
   :type '(choice
-	  (const :tag "never (nil)" nil)
-	  (number :tag "seconds"))
+          (const :tag "never (nil)" nil)
+          (number :tag "seconds"))
   :group 'company-netlist)
 
 (defcustom company-netlist--force-read-json nil
@@ -238,7 +240,7 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 (defvar company-netlist-cells-hash nil)
 (defvar company-netlist-ports-hash nil)
 (defvar company-netlist-nets-hash nil)
-(defvar company-netlist-refs-hash nil)	; nested hash table: key:"block" val1: {key2: "hier-ref" val2:"ref-cell"}
+(defvar company-netlist-refs-hash nil)  ; nested hash table: key:"block" val1: {key2: "hier-ref" val2:"ref-cell"}
 (defvar company-netlist-hier_cells-hash nil) ; contains all hierarchical references
 (defvar my-json-hash nil)
 
@@ -284,7 +286,7 @@ NOTE: returns string"
   (let ((prfx (company-grab-symbol)))
     ;; (if (not (null company-netlist--debug))
     (if company-netlist--debug
-	(message "`company-netlist--prefix' grabbed <%s>" prfx))
+    (message "`company-netlist--prefix' grabbed <%s>" prfx))
     (when prfx
       ;; Completion candidates for annotations don't include '@'.
       (cond
@@ -326,8 +328,7 @@ NOTE: returns list of lists
   "appends candidates on newline below point"
   (newline)
   (dolist (item cands)
-    (insert (concat "    " item "\n")))
-  )
+    (insert (concat "    " item "\n"))))
 
 
 ;; required inputs ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -349,41 +350,42 @@ All NC data is contained in the following 5 JSON files
 NOTE: only read JSON file if *-<type>-hash variable NOT already set
 "
   (let* ((json-object-type 'hash-table)
-	 (json-array-type  'list)
-	 (json-key-type    'string))
+         (json-array-type  'list)
+         (json-key-type    'string))
     (setq my-json-hash '("cells"
-			 "ports"
-			 "nets"
-			 "refs"
-			 "hier_cells"))
+                         "ports"
+                         "nets"
+                         "refs"
+                         "hier_cells"))
     (message "company-netlist: Begin reading JSON files")
     (dolist (fl my-json-hash)
       (if company-netlist--debug
-	  (message "Processing JSON file: %s for var: %s" (concat fl ".json") (concat "company-netlist-" fl "-hash")))
+          (message "Processing JSON file: %s for var: %s" (concat fl ".json") (concat "company-netlist-" fl "-hash")))
       (if (or (null (symbol-value (intern-soft (concat "company-netlist-" fl "-hash"))))
-	      company-netlist--force-read-json)
-	  (if (file-exists-p (expand-file-name (concat fl ".json") company-netlist-dir))
-	      (if (version< "26.1" emacs-version)
-		  (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl ".json") company-netlist-dir)))
-		;; else, need to test for "broken" JSON constructs in emacs 26.1 (i.e. embedded tabs)
-		(if (string-blank-p (shell-command-to-string (concat "grep -P '\".*\t.*\"' " (expand-file-name (concat fl ".json") company-netlist-dir))))
-		    (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl ".json") company-netlist-dir)))
-		  ;; else, need to fix!
-		  (message "File %s has embedded tabs, which breaks Emacs %s JSON parser" (concat fl ".json") emacs-version)
-		  (with-temp-buffer
-		    (insert-file-contents (expand-file-name (concat fl ".json") company-netlist-dir))
-		    (goto-char (point-min))
-		    (while (search-forward "	" nil t) ; emacs 26 json parser does not like embedded tabs!
-		      (replace-match " " nil t))
-		    ;; (write-region (point-min) (point-max) (expand-file-name (concat fl "_mod" ".json") company-netlist-dir)) ; write out modified file
-		    (goto-char (point-min))
-		    (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read))
-		    )
-		  ;; (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl "_mod" ".json") company-netlist-dir)))
-		  ))
-	    (message "File %s does not exist in dir %s. Cannot perform completions." (concat fl ".json") company-netlist-dir))
-	(message "var %s already exists" (intern-soft (concat "company-netlist-" fl "-hash"))))
-      )					; end dolist
+              company-netlist--force-read-json)
+          (if (file-exists-p (expand-file-name (concat fl ".json") company-netlist-dir))
+              (if (version< "26.1" emacs-version)
+                  (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl ".json") company-netlist-dir)))
+                ;; else, need to test for "broken" JSON constructs in emacs 26.1 (i.e. embedded tabs)
+                (if (string-blank-p (shell-command-to-string (concat "grep -P '\".*\t.*\"' " (expand-file-name (concat fl ".json") company-netlist-dir))))
+                    (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl ".json") company-netlist-dir)))
+                  ;; else, need to fix!
+                  (message "File %s has embedded tabs, which breaks Emacs %s JSON parser" (concat fl ".json") emacs-version)
+                  (with-temp-buffer
+                    (insert-file-contents (expand-file-name (concat fl ".json") company-netlist-dir))
+                    (goto-char (point-min))
+                    (while (search-forward "	" nil t) ; emacs 26 json parser does not like embedded tabs! (C-q <tab> to insert!)
+                      (replace-match " " nil t))
+                    ;; (write-region (point-min) (point-max) (expand-file-name (concat fl "_mod" ".json") company-netlist-dir)) ; write out modified file
+                    (goto-char (point-min))
+                    (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read))
+                    )
+                  ;; (set (intern-soft (concat "company-netlist-" fl "-hash")) (json-read-file (expand-file-name (concat fl "_mod" ".json") company-netlist-dir)))
+                  ))
+            (message "File %s does not exist in dir %s. Cannot perform Netlist completions." (concat fl ".json") company-netlist-dir))
+        (if company-netlist--debug
+            (message "var %s already exists" (intern-soft (concat "company-netlist-" fl "-hash")))))
+      )                 ; end dolist
     (message "company-netlist: end reading JSON files")
     ))
 
@@ -396,16 +398,16 @@ NOTE: returns list of hierarchy candidates"
   (if company-netlist--debug
       (message "`company-netlist--hier-candidates' gets <%s> <%s>" blk prfx))
   (let* ((case-fold-search company-netlist--ignore-case)
-	 (hier-obj-list (ht-get company-netlist-hier_cells-hash blk))
-	 (hier-complete-opts '()))
+         (hier-obj-list (ht-get company-netlist-hier_cells-hash blk))
+         (hier-complete-opts '()))
     (if company-netlist--debug
-	(message "`company-netlist--hier' case-fold-search = <%s>\n`company-netlist--prefix-start = <%s>" case-fold-search company-netlist--prefix-start))
+        (message "`company-netlist--hier' case-fold-search = <%s>\n`company-netlist--prefix-start = <%s>" case-fold-search company-netlist--prefix-start))
     (dolist (element hier-obj-list hier-complete-opts)
       (if company-netlist--prefix-start
-	  (if (eq 0 (string-match prfx element))
-	      (setq hier-complete-opts (cons element hier-complete-opts)))
-	(if (string-match prfx element)
-	    (setq hier-complete-opts (cons element hier-complete-opts)))))
+          (if (eq 0 (string-match prfx element))
+              (setq hier-complete-opts (cons element hier-complete-opts)))
+        (if (string-match prfx element)
+            (setq hier-complete-opts (cons element hier-complete-opts)))))
     (delete-dups hier-complete-opts)))
 
 (defun company-netlist--other-candidates (blk prfx compl-typ)
@@ -414,32 +416,32 @@ NOTE: returns list of [cell/port/net] candidates"
   (if company-netlist--debug
       (message "`company-netlist--other-candidates' gets blk=<%s> prefix=<%s> type=<%s>" blk prfx compl-typ))
   (let ((case-fold-search company-netlist--ignore-case)
-	(ref-name (ht-get* company-netlist-refs-hash company-netlist-top-blk blk))
-	(obj-complete-opts '())
-	(obj-list))
+        (ref-name (ht-get* company-netlist-refs-hash company-netlist-top-blk blk))
+        (obj-complete-opts '())
+        (obj-list))
     (if company-netlist--debug
-	(message "`company-netlist--other-candidates' has case-fold-search = <%s>\n`company-netlist--other-candidates' has `company-netlist--prefix-start set to <%s>\n`company-netlist-refs-hash' returns <%s>" case-fold-search company-netlist--prefix-start ref-name))
+        (message "`company-netlist--other-candidates' has case-fold-search = <%s>\n`company-netlist--other-candidates' has `company-netlist--prefix-start set to <%s>\n`company-netlist-refs-hash' returns <%s>" case-fold-search company-netlist--prefix-start ref-name))
     (if (null ref-name)
-	(message (concat "No reference name found for " blk " in " (expand-file-name "refs.json" company-netlist-dir)))
+        (message (concat "No reference name found for " blk " in " (expand-file-name "refs.json" company-netlist-dir)))
       ;; else ...
       ;; intern-soft -> converts string to symbol
       ;; symbol-value -> get the value of symbol (i.e. hash-table)
       ;; ht-get -> returns value for hash-table-key=blk (whew!)
       (setq obj-list (ht-get (symbol-value (intern-soft (concat "company-netlist-" compl-typ "-hash"))) ref-name))
       (dolist (element obj-list obj-complete-opts)
-	(if company-netlist--prefix-start
-	    (progn
-	      (if (eq 0 (string-match prfx element))
-		  (progn
-		    (if (> (+ (length element) (length blk)) company-netlist--cmd-max-len)
-			(setq company-netlist--cmd-max-len (+ (length element) (length blk))))
-		    (setq obj-complete-opts (cons (concat blk "/" element) obj-complete-opts)))))
-	  (if (string-match prfx element)
-	      (progn
-		(if (> (+ (length element) (length blk)) company-netlist--cmd-max-len)
-		    (setq company-netlist--cmd-max-len (+ (length element) (length blk))))
-		(setq obj-complete-opts (cons (concat blk "/" element) obj-complete-opts)))
-	    ))))
+        (if company-netlist--prefix-start
+            (progn
+              (if (eq 0 (string-match prfx element))
+                  (progn
+                    (if (> (+ (length element) (length blk)) company-netlist--cmd-max-len)
+                        (setq company-netlist--cmd-max-len (+ (length element) (length blk))))
+                    (setq obj-complete-opts (cons (concat blk "/" element) obj-complete-opts)))))
+          (if (string-match prfx element)
+              (progn
+                (if (> (+ (length element) (length blk)) company-netlist--cmd-max-len)
+                    (setq company-netlist--cmd-max-len (+ (length element) (length blk))))
+                (setq obj-complete-opts (cons (concat blk "/" element) obj-complete-opts)))
+            ))))
     (delete-dups obj-complete-opts)))
 
 (defun company-netlist--candidates (prefix obj-type)
@@ -452,20 +454,20 @@ NOTE: returns list of completion candidates"
   (if company-netlist--debug
       (message "`company-netlist--candidates' args <%s> <%s>" prefix obj-type))
   (let ((company-netlist--blk)
-	(company-netlist--prfx prefix)
-	(obj-complete-opts '())
-	(indx (string-match company-netlist-hier-sep prefix)))
+        (company-netlist--prfx prefix)
+        (obj-complete-opts '())
+        (indx (string-match company-netlist-hier-sep prefix)))
     (setq company-netlist--cmd-max-len 0)  ; reset here
     (if (null indx)   ; no hier-sep
-	(setq company-netlist--blk company-netlist-top-blk)
+        (setq company-netlist--blk company-netlist-top-blk)
       (while (numberp indx)  ; at least 1 hier-sep
-	(setq company-netlist--blk  (substring prefix 0 indx))
-	(setq company-netlist--prfx (substring prefix (+ indx 1)))
-	(setq indx (string-match company-netlist-hier-sep prefix (+ indx 1)))))
+        (setq company-netlist--blk  (substring prefix 0 indx))
+        (setq company-netlist--prfx (substring prefix (+ indx 1)))
+        (setq indx (string-match company-netlist-hier-sep prefix (+ indx 1)))))
     (if company-netlist--debug
-	(message "`company-netlist--candidates' passing blk=<%s> prfx=<%s> typ=<%s>" company-netlist--blk company-netlist--prfx obj-type))
+        (message "`company-netlist--candidates' passing blk=<%s> prfx=<%s> typ=<%s>" company-netlist--blk company-netlist--prfx obj-type))
     (if (string-equal obj-type "hier")
-	(setq obj-complete-opts (company-netlist--hier-candidates company-netlist--blk company-netlist--prfx))
+        (setq obj-complete-opts (company-netlist--hier-candidates company-netlist--blk company-netlist--prfx))
       (setq obj-complete-opts (company-netlist--other-candidates company-netlist--blk company-netlist--prfx obj-type)))
     (sort obj-complete-opts 'string<)))
 
@@ -479,9 +481,9 @@ NOTE: returns annotation *string* for each candidate"
   (if company-netlist--debug
       (message "`company-netlist--annotation' gets <%s>\ncmd-max-len: %s" candidate company-netlist--cmd-max-len))
   (let ((anno "")
-	(pad-len (- (+ 5 company-netlist--cmd-max-len) (length candidate))))
+        (pad-len (- (+ 5 company-netlist--cmd-max-len) (length candidate))))
     (if (string-equal "cells" company-netlist--type)
-	(setq anno (concat (s-pad-left pad-len " " "(") (ht-get* company-netlist-refs-hash company-netlist-top-blk candidate) ")")))
+        (setq anno (concat (s-pad-left pad-len " " "(") (ht-get* company-netlist-refs-hash company-netlist-top-blk candidate) ")")))
     anno))
 
 
@@ -495,13 +497,13 @@ NOTE: returns annotation *string* for each candidate"
 * Next, set up some variables to find package archives
 (setq url-proxy-services
       '((\"no_proxy\" . \"^\\(localhost\\|10.*\\)\")
-	(\"http\" . \"proxy-us.intel.com:911\")
-	(\"https\" . \"proxy-us.intel.com:911\")))
+    (\"http\" . \"proxy-us.intel.com:911\")
+    (\"https\" . \"proxy-us.intel.com:911\")))
 
 (setq package-archives
       '((\"gnu\" . \"http://elpa.gnu.org/packages/\")
-	(\"marmalade\" . \"http://marmalade-repo.org/packages/\")
-	(\"melpa\" . \"http://melpa.org/packages/\")))
+    (\"marmalade\" . \"http://marmalade-repo.org/packages/\")
+    (\"melpa\" . \"http://melpa.org/packages/\")))
 
 * Next, in order to use this, you will need to install the \"company\" completion package from MELPA
 M-x package-install RET company RET
@@ -524,17 +526,17 @@ cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/make-tcl-abbrevs.el ~/<your_emacs_load
 (require 'make-tcl-abbrevs)
 
 (add-hook 'tcl-mode-hook
-	  (lambda()
-	    (define-key tcl-mode-map [delete] 'delete-forward-char)
-	    (define-key tcl-mode-map \"\\C-ch\"  'company-netlist--hier)
-	    (define-key tcl-mode-map \"\\C-cc\"  'company-netlist--cells)
-	    (define-key tcl-mode-map \"\\C-cn\"  'company-netlist--nets)
-	    (define-key tcl-mode-map \"\\C-cp\"  'company-netlist--ports)
-	    (define-key tcl-mode-map \"\\C-ct\"  'company-syntcl--tcl)
-	    (add-to-list (make-local-variable 'company-backends)
-			 '(company-netlist company-syntcl company-etags))
-	    (set (make-local-variable 'company-idle-delay) company-netlist--idle-delay)
-	    (make-tcl-abbrevs)))
+      (lambda()
+        (define-key tcl-mode-map [delete] 'delete-forward-char)
+        (define-key tcl-mode-map \"\\C-ch\"  'company-netlist--hier)
+        (define-key tcl-mode-map \"\\C-cc\"  'company-netlist--cells)
+        (define-key tcl-mode-map \"\\C-cn\"  'company-netlist--nets)
+        (define-key tcl-mode-map \"\\C-cp\"  'company-netlist--ports)
+        (define-key tcl-mode-map \"\\C-ct\"  'company-syntcl--tcl)
+        (add-to-list (make-local-variable 'company-backends)
+             '(company-netlist company-syntcl company-etags))
+        (set (make-local-variable 'company-idle-delay) company-netlist--idle-delay)
+        (make-tcl-abbrevs)))
 "
   )
 
@@ -581,7 +583,7 @@ type \"M-x customize-group RET company-netlist RET\" to get list of user-specifi
   (cl-case command
     (interactive (company-begin-backend 'company-netlist))
     (init (when (memq major-mode company-netlist-modes)
-	    (company-netlist--read-json-files))) ; read all JSON files into variables
+            (company-netlist--read-json-files))) ; read all JSON files into variables
     (prefix (and (memq major-mode company-netlist-modes)
                  (or (company-netlist--prefix) 'stop)))
     (candidates (company-netlist--candidates arg company-netlist--type))

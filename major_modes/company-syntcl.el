@@ -214,13 +214,6 @@
 ;;                   add support for gui_* completions (color,pattern,line_style, symbol_type, type)
 ;;                   new function `company-syntcl--gui-candidates'
 
-;;; To do:
-
-;; (done?) tweak last-completed-word algorithm?
-;; (done!) look at *scan-buffer-for-var-names - candidates depend on current line?
-;; (done!) *-scan-buffer-for-var-names: ignore comments
-;; (done!) 'dict set'|'lappend'|'unset' - need to strip off leading '$'
-
 ;;; Code:
 
 (require 'company)
@@ -239,20 +232,16 @@
 (defvar company-syntcl-modes '(tcl-mode)
   "Major modes which Tclcomplete may complete.")
 
-(defvar company-syntcl-ward "")
-(if (getenv "WARD")
-    (setq company-syntcl-ward (getenv "WARD"))
-  (setq company-syntcl-ward "/nfs/pdx/disks/sdg74_0819/work/fcreed/sprspxcc/sprspxcc_tr_ww45.4"))
+(defvar company-syntcl-ward (getenv "WARD"))
 
 ;; if running $WARD/dp/user_scripts/WriteTclCompleteFiles.tcl manually, result will be in $WARD/TclComplete
 ;; else, they will be in $WARD/dp/user_scripts/TclComplete (under git control)
-(defvar company-syntcl-dir "")
-(if (file-directory-p (expand-file-name "TclComplete" company-syntcl-ward))
-    (setq company-syntcl-dir (expand-file-name "TclComplete" company-syntcl-ward))
-  (if (file-directory-p (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
-      (setq company-syntcl-dir (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
-    (setq company-syntcl-dir "/tmp"))  ; if not starting from valid WARD or prior to setproj/setup/populate
-  )
+(defvar company-syntcl-dir
+  (progn (((file-directory-p (expand-file-name "TclComplete" company-syntcl-ward))
+           (expand-file-name "TclComplete" company-syntcl-ward))
+          ((file-directory-p (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
+           (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
+          (t "/tmp"))))
 
 (defcustom company-syntcl--debug nil
   "enable to see additional info in *Messages* buffer"
@@ -284,13 +273,6 @@ NOTE: better to keep at default (nil) to avoid wrong completion type"
           (number :tag "seconds"))
   :group 'company-syntcl)
 
-;; 2018oct04: obsolete var
-;; (defcustom company-syntcl--force-gen-file nil
-;;   "force creation of ./TclComplete/*.el file, even if it already exists (default: \"off\")
-;; NOTE: will be overwritten if set to \"on\" ('t')"
-;;   :type 'boolean
-;;   :group 'company-syntcl)
-
 (defcustom company-syntcl--force-read-json nil
   "force reading JSON files (default \"nil\")
 set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
@@ -308,18 +290,17 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 (defvar company-syntcl--type nil)       ; default, set based on completion prefix...
 
 ;; these commands have no entries in ./TclComplete/details.vim (need to skip annotation)
-(defvar company-syntcl--cmds-without-details '(
-                                               "array"
-                                               "binary"
-                                               "chan"
-                                               "dict"
-                                               "expr"
-                                               "file"
-                                               "info"
-                                               "namespace"
-                                               "package"
-                                               "string"
-                                               ))
+(defvar company-syntcl--cmds-without-details
+  '("array"
+    "binary"
+    "chan"
+    "dict"
+    "expr"
+    "file"
+    "info"
+    "namespace"
+    "package"
+    "string"))
 
 (defvar company-syntcl--last-completed-word "")
 
@@ -424,8 +405,7 @@ NOTE: only read JSON file if *-<type>-hash variable NOT already set
   (let* ((json-object-type 'hash-table)
          (json-array-type  'list)
          (json-key-type    'string)
-         (my-types '("list" "hash"))
-         )
+         (my-types '("list" "hash")))
     (message "company-syntcl: begin reading JSON files")
     (setq my-json-list '("commands"
                          "designs"
@@ -464,23 +444,17 @@ NOTE: only read JSON file if *-<type>-hash variable NOT already set
                       (goto-char (point-min))
                       (while (search-forward "	" nil t) ; emacs 26 json parser does not like embedded tabs! (C-q <tab> to insert!)
                         (replace-match " " nil t))
-                      ;; (write-region (point-min) (point-max) (expand-file-name (concat fl "_mod" ".json") company-syntcl-dir)) ; write out modified file
                       (goto-char (point-min))
-                      (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read))
-                      )
-                    ;; (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read-file (expand-file-name (concat fl "_mod" ".json") company-syntcl-dir)))
-                    ))
+                      (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read)))))
               (message "File %s does not exist in dir %s. Cannot perform Tcl completions." (concat fl ".json") company-syntcl-dir))
           (if company-syntcl--debug
-              (message "var %s already exists" (intern-soft (concat "tcl-" fl "-" typ)))))
-        ))
+              (message "var %s already exists" (intern-soft (concat "tcl-" fl "-" typ)))))))
     (message "company-syntcl: end reading JSON files")
     ;; setting up derived variables
     (if (null tcl-namespaces-list)
         (setq tcl-namespaces-list (company-syntcl--get-namespaces)))
     (if (null tcl-track-pattern-list)
-        (setq tcl-track-pattern-list (company-syntcl--get-track-patterns)))
-    ))
+        (setq tcl-track-pattern-list (company-syntcl--get-track-patterns)))))
 
 (defun company-syntcl--get-track-patterns ()
   "get list of track patterns from G_ROUTE_TRACK_PATTERNS var
@@ -493,90 +467,71 @@ NOTE: parses `tcl-g_var_array-list'"
             (setq pattern (substring item (1+ (string-match "(" item)) (1- (length item))))
             (if company-syntcl--debug
                 (message "pattern is %s" pattern))
-            (setq pattern-list (cons pattern pattern-list))))
-      )
+            (setq pattern-list (cons pattern pattern-list)))))
     (delete-dups pattern-list)))
 
 
-  ;; prefix ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; prefix ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  (defun company-syntcl--find-active-cmd ()
-    "find active command - either at first unmatched left bracket or beginning of line
+(defun company-syntcl--find-active-cmd ()
+  "find active command - either at first unmatched left bracket or beginning of line
 NOTE: returns string"
-    (interactive)
-    (let* ((rt-bracket 0)
-           (cur-pt (point))
-           (char-behind)
-           (bol (line-beginning-position))
-           (str (buffer-substring-no-properties bol cur-pt))
-           (indx (length str)))
-      ;; (setq company-syntcl--last-completed-word "")
+  (interactive)
+  (let* ((rt-bracket 0)
+         (cur-pt (point))
+         (char-behind)
+         (bol (line-beginning-position))
+         (str (buffer-substring-no-properties bol cur-pt))
+         (indx (length str)))
+    (if company-syntcl--debug
+        (message "`company-syntcl--find-active-cmd': starting vars:\nindx: %s, bol: %s, str: %s" indx bol str))
+    (save-excursion
       (if company-syntcl--debug
-          (message "`company-syntcl--find-active-cmd': starting vars:\nindx: %s, bol: %s, str: %s" indx bol str))
-      ;; NOTE: checking for 2 word completion separately
-      ;; (cond
-      ;; ((string-match "package require" str) (setq company-syntcl--active-cmd "package require"))
-      ;; ((string-match "dict set" str)        (setq company-syntcl--active-cmd "dict set"))
-      ;; ((string-match "dict unset" str)      (setq company-syntcl--active-cmd "dict unset"))
-      ;; ((string-match "dict incr" str)       (setq company-syntcl--active-cmd "dict incr"))
-      ;; ((string-match "dict with" str)       (setq company-syntcl--active-cmd "dict with"))
-      ;; ((string-match "dict append" str)     (setq company-syntcl--active-cmd "dict append"))
-      ;; ((string-match "dict update" str)     (setq company-syntcl--active-cmd "dict update"))
-      ;; ((string-match "dict lappend" str)    (setq company-syntcl--active-cmd "dict lappend"))
-      ;; ((string-match "string is" str)       (setq company-syntcl--active-cmd "string is"))
-      ;; ((string-match "array set" str)       (setq company-syntcl--active-cmd "array set"))
-      ;; (t
-      (save-excursion
+          (message "`company-syntcl--find-cmd': starting indx= <%s>" indx))
+      ;; continue going backward to start of line or first unmatched left bracket
+      (while (and (> indx 0) (>= rt-bracket 0))
+        (setq char-behind (substring str (1- indx) indx))
         (if company-syntcl--debug
-            (message "`company-syntcl--find-cmd': starting indx= <%s>" indx))
-        ;; continue going backward to start of line or first unmatched left bracket
-        (while (and (> indx 0) (>= rt-bracket 0))
-          (setq char-behind (substring str (1- indx) indx))
-          (if company-syntcl--debug
-              (message "`company-syntcl--find-cmd': char-behind= %s" char-behind))
-          (if (string-equal char-behind "]")
+            (message "`company-syntcl--find-cmd': char-behind= %s" char-behind))
+        (if (string-equal char-behind "]")
+            (progn
+              (setq rt-bracket (1+ rt-bracket))
+              (if company-syntcl--debug
+                  (message "`company-syntcl--find-cmd': incrementing rt-bracket= %s" rt-bracket)))
+          (if (string-equal char-behind "[")
               (progn
-                (setq rt-bracket (1+ rt-bracket))
+                (setq rt-bracket (1- rt-bracket))
                 (if company-syntcl--debug
-                    (message "`company-syntcl--find-cmd': incrementing rt-bracket= %s" rt-bracket)))
-            (if (string-equal char-behind "[")
-                (progn
-                  (setq rt-bracket (1- rt-bracket))
-                  (if company-syntcl--debug
-                      (message "`company-syntcl--find-cmd': decrementing rt-bracket= %s" rt-bracket)))))
-          (if (>= rt-bracket 0)      ; keep going back
-              (setq indx (1- indx)))
-          (backward-char)
-          )           ; at 1st unmatched '[' or line start
-        (if company-syntcl--debug
-            (message "`company-syntcl--find-cmd': end of 1st while ==> rt-bracket= <%s>, indx= <%s>" rt-bracket indx))
-        ;; move index to right through whitespace until we hit command
-        (while (and (< indx (length str)) (string-equal " " (substring str indx (1+ indx))))
-          (setq indx (1+ indx)))
-        (if company-syntcl--debug
-            (message "`company-syntcl--find-cmd': end of whitespace after leftmost unmatched bracket/bol: %s" indx))
-        ;; move index ahead of possible :: global namespace
-        (if (string-equal "::" (substring str indx (+ 2 indx)))
-            (setq indx (+ 2 indx)))
-        (if company-syntcl--debug
-            (message "`company-syntcl--find-cmd': end of namespace: %s" indx))
-        (string-match "\\([\\-a-zA-Z0-9:_]+\\)" str indx)  ; here is active command
-        (setq company-syntcl--active-cmd (match-string-no-properties 1 str))
-        ;; substract 1 from length of str, then do split-string, then take 2nd to last element from list
-        ;; string                   last-completed-word
-        ;; "ab cd ef g"             "ef"
-        ;; "ab cd ef "              "ef"
-        (setq company-syntcl--last-completed-word
-              (nth (1- (length (split-string (substring str 0 (1- (string-width str))))))
-                   (split-string (substring str 0 (1- (string-width str))))
-                   ))
-        )
-      ;; )) ; end 'cond'
+                    (message "`company-syntcl--find-cmd': decrementing rt-bracket= %s" rt-bracket)))))
+        (if (>= rt-bracket 0)      ; keep going back
+            (setq indx (1- indx)))
+        (backward-char))           ; at 1st unmatched '[' or line start
       (if company-syntcl--debug
-          (progn
-            (message "`company-syntcl--find-cmd': active-cmd: %s" company-syntcl--active-cmd)
-            (message "`company-syntcl--find-cmd': last-compl-word: %s" company-syntcl--last-completed-word)))
-      company-syntcl--active-cmd))
+          (message "`company-syntcl--find-cmd': end of 1st while ==> rt-bracket= <%s>, indx= <%s>" rt-bracket indx))
+      ;; move index to right through whitespace until we hit command
+      (while (and (< indx (length str)) (string-equal " " (substring str indx (1+ indx))))
+        (setq indx (1+ indx)))
+      (if company-syntcl--debug
+          (message "`company-syntcl--find-cmd': end of whitespace after leftmost unmatched bracket/bol: %s" indx))
+      ;; move index ahead of possible :: global namespace
+      (if (string-equal "::" (substring str indx (+ 2 indx)))
+          (setq indx (+ 2 indx)))
+      (if company-syntcl--debug
+          (message "`company-syntcl--find-cmd': end of namespace: %s" indx))
+      (string-match "\\([\\-a-zA-Z0-9:_]+\\)" str indx)  ; here is active command
+      (setq company-syntcl--active-cmd (match-string-no-properties 1 str))
+      ;; substract 1 from length of str, then do split-string, then take 2nd to last element from list
+      ;; string                   last-completed-word
+      ;; "ab cd ef g"             "ef"
+      ;; "ab cd ef "              "ef"
+      (setq company-syntcl--last-completed-word
+            (nth (1- (length (split-string (substring str 0 (1- (string-width str))))))
+                 (split-string (substring str 0 (1- (string-width str)))))))
+    (if company-syntcl--debug
+        (progn
+          (message "`company-syntcl--find-cmd': active-cmd: %s" company-syntcl--active-cmd)
+          (message "`company-syntcl--find-cmd': last-compl-word: %s" company-syntcl--last-completed-word)))
+    company-syntcl--active-cmd))
 
 (defun company-syntcl--prefix ()
   "grabs completion string prefix using `company-grab-symbol.
@@ -595,15 +550,7 @@ NOTE: returns string"
      ((eq ?\[ (string-to-char prfx)) (setq prfx (substring prfx 1)))
      ((eq ?\( (string-to-char prfx)) (setq prfx (substring prfx 1))))
     (cond                                ; set vars based upon *--active-cmd
-     ((string-equal company-syntcl--active-cmd prfx)  (setq company-syntcl--active-cmd ""))
-     ;; NOTE: only set *--attr-flag if need to prompt for attribute class
-     ;; ((string-match "^\\(set_attribute\\|get_attribute\\|filter_collection\\|get_defined_attributes\\)" company-syntcl--active-cmd)
-     ;; ((member company-syntcl--active-cmd tcl-attr-funcs)
-     ;;  (setq company-syntcl--attr-flag "yes"))
-     ;; ((and (string-match "^get_" company-syntcl--active-cmd)
-     ;;        (string-equal "-filter" company-syntcl--last-completed-word))
-     ;;  (setq company-syntcl--attr-flag "yes"))
-     )                ; end cond2
+     ((string-equal company-syntcl--active-cmd prfx)  (setq company-syntcl--active-cmd ""))) ;; NOTE: only set *--attr-flag if need to prompt for attribute class
     (if company-syntcl--debug
         (progn
           (message "`company-syntcl--prefix': active-cmd = %s" company-syntcl--active-cmd)
@@ -612,7 +559,6 @@ NOTE: returns string"
     (if (not (string-equal "" prfx))
         ;; string-to-char returns first char
         (cond
-         ;;((eq ?@ (string-to-char prfx)) (setq prfx (substring prfx 1)))
          ((eq ?$ (string-to-char prfx))            (setq company-syntcl--type "var-names")) ; variables in file
          ((eq ?- (string-to-char prfx))            (setq company-syntcl--type "options")) ; '-foo'
          ((string-match "^G_" prfx)                (setq company-syntcl--type "gvars")) ; G_vars
@@ -623,8 +569,7 @@ NOTE: returns string"
          ((string-equal "yes" company-syntcl--attr-flag) (setq company-syntcl--type "attributes")) ; attribute
          ((member company-syntcl--active-cmd tcl-attr-funcs) (setq company-syntcl--type "attributes")) ; attribute
          (t
-          (setq company-syntcl--type "options"))    ; default
-         )   ; end cond3
+          (setq company-syntcl--type "options"))) ; default   ; end cond3
       ;; else (prfx = "")
       ;; have to account for multiple completions on single line
       ;; i.e. 'get_' -> 'get_cells -' -> 'get_cells -design ' -> 'get_cells -design sprxccsouth01' ...
@@ -635,21 +580,16 @@ NOTE: returns string"
        ((and (string-match "^get_" company-syntcl--active-cmd)
              (string-equal "-filter" company-syntcl--last-completed-word))
         (setq company-syntcl--type "attributes"))
-       ;; ((string-match "^\\(setvar\\|getvar\\|lappend_var\\|info_var\\|append_var\\)" company-syntcl--active-cmd) ; g_vars
        ((member company-syntcl--active-cmd tcl-gvar-funcs) (setq company-syntcl--type "gvars"))
-       ;; ((string-match "^\\(set\\|unset\\|append\\|lappend\\|lset\\|incr\\|dict set\\|dict unset\\|dict append\\|dict lappend\\|dict incr\\|dict with\\|dict update\\|array set\\)" company-syntcl--active-cmd) ; CHANGE: old version included 'set', 'foreach'
        ((or (member company-syntcl--active-cmd tcl-varname-funcs)
             (member (concat company-syntcl--active-cmd " " company-syntcl--last-completed-word) tcl-varname-funcs))
         (setq company-syntcl--type "var-names"))
        ((string-match "\\(iccpp_com\\:\\:set_param\\|iccpp_com\\:\\:get_param\\)" company-syntcl--active-cmd) ;iccpp
         (setq company-syntcl--type "iccpp"))
-       ;; ((string-match "\\(get_app_options\\|set_app_options\\|report_app_options\\|reset_app_options\\|get_app_options_value\\|set_app_options_value\\|report_app_options_value\\|reset_app_options_value\\)"
        ((member company-syntcl--active-cmd tcl-app-opt-funcs) (setq company-syntcl--type "app-options"))
        ((or (string-equal "-design" company-syntcl--last-completed-word)
-            ;; (string-match "\\(current_design\\|get_working_design\\)" company-syntcl--active-cmd))
             (member company-syntcl--active-cmd tcl-design-funcs))
         (setq company-syntcl--type "designs"))
-       ;; ((string-match "\\(getenv\\|setenv\\)" company-syntcl--active-cmd)
        ((member company-syntcl--active-cmd tcl-env-funcs) (setq company-syntcl--type "env-vars"))
        ((string-match "app_var" company-syntcl--active-cmd)
         (setq company-syntcl--type "app-vars"))
@@ -678,9 +618,7 @@ NOTE: returns string"
              (not (string-match "^gui" company-syntcl--last-completed-word)))
         (setq company-syntcl--type "gui"))
        (t
-        (setq company-syntcl--type "options"))    ; default
-       )                      ; end cond
-      )                       ; end if ...
+        (setq company-syntcl--type "options"))))
     (if company-syntcl--debug
         (progn
           (message "`company-syntcl--prefix': type = %s" company-syntcl--type)
@@ -715,14 +653,12 @@ NOTE: returns string"
                      "\\|foreach_in_collection[[:space:]]+"
                      "\\|set[[:space:]]+"
                      "\\)"
-                     "\\([a-zA-Z0-9_]+\\)[[:space:]]*"
-                     ))
+                     "\\([a-zA-Z0-9_]+\\)[[:space:]]*"))
       (setq regex (concat
                    "\\("
                    "array[[:space:]]+set[[:space:]]+"
                    "\\)"
-                   "\\([a-zA-Z0-9_]+\\)[[:space:]]*"
-                   )))
+                   "\\([a-zA-Z0-9_]+\\)[[:space:]]*")))
     (save-excursion
       (goto-char (point-min))       ; go to beginning of buffer
       (while (not (eobp))
@@ -766,8 +702,7 @@ NOTE: returns string"
                           (if (and (null (member item var-names))
                                    (not (string-match "}" item))
                                    (not (string-match "^[[:space:]]*$" item)))
-                              (setq var-names (cons item var-names))))
-                        ))
+                              (setq var-names (cons item var-names))))))
                   ;; Check for final args of lassign or scan (go backwards from end. look for valid var names)
                   (if (string-match "\\(lassign\\|scan\\)" myline)
                       (progn
@@ -780,9 +715,7 @@ NOTE: returns string"
                                    (not (string-match "\\(scan\\|lassign\\)" item)))
                               (progn
                                 (if (null (member item var-names))
-                                    (setq var-names (cons item var-names))))
-                            ;; else
-                            ))))))
+                                    (setq var-names (cons item var-names))))))))))
             (forward-line)))))
     (dolist (item var-names)
       (if (or (eq 0 (string-match prefix item))
@@ -803,8 +736,7 @@ NOTE: returns list"
             (if company-syntcl--debug
                 (message "`company-syntcl--get-namespaces' item: <%s>  base: <%s>" item base))
             (if (null (member base namespaces))
-                (setq namespaces (cons base namespaces))))
-        ))
+                (setq namespaces (cons base namespaces))))))
     (delete-dups namespaces)))
 
 (defun company-syntcl--ask-for-attr-class (attr-class)
@@ -925,8 +857,7 @@ NOTE: returns a list of candidates"
               ;; need to ask for attribute
               (if company-syntcl--debug
                   (message "`company-syntcl--attr-candidates' cmpl-typ: Ask For Attribute"))
-              (setq attr-obj-list (company-syntcl--ask-for-attr-class company-syntcl--attr-class)))
-            ))))
+              (setq attr-obj-list (company-syntcl--ask-for-attr-class company-syntcl--attr-class)))))))
 
     (dolist (item attr-obj-list)
       (if company-syntcl--prefix-start
@@ -940,8 +871,7 @@ NOTE: returns a list of candidates"
             (progn
               (if (> (length item) company-syntcl--cmd-max-len)
                   (setq company-syntcl--cmd-max-len (length item)))
-              (setq attr-complete-opts (cons item attr-complete-opts)))
-          )))
+              (setq attr-complete-opts (cons item attr-complete-opts))))))
     (delete-dups attr-complete-opts)))
 
 (defun company-syntcl--gui-candidates (prfx)
@@ -960,11 +890,8 @@ NOTE: returns list of candidates"
       (setq cand-obj-list tcl-gui-symbol-types))
      ((string-equal "-type" company-syntcl--last-completed-word)
       (setq cand-obj-list tcl-gui-types))
-     ;; ((string-equal "-symbol_size" company-syntcl--last-completed-word)
-     ;;  (setq cand-obj-list tcl-gui-symbol-sizes))
      ((string-equal "-line_style" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-linestyles))
-     )
+      (setq cand-obj-list tcl-gui-linestyles)))
     (dolist (element cand-obj-list cand-complete-opts)
       (if company-syntcl--prefix-start
           (progn
@@ -977,10 +904,8 @@ NOTE: returns list of candidates"
             (progn
               (if (> (length element) company-syntcl--cmd-max-len)
                   (setq company-syntcl--cmd-max-len (length element)))
-              (setq cand-complete-opts (cons element cand-complete-opts)))
-          )))
-    (delete-dups cand-complete-opts))
-  )
+              (setq cand-complete-opts (cons element cand-complete-opts))))))
+    (delete-dups cand-complete-opts)))
 
 (defun company-syntcl--get-candidate-list (prfx obj-type)
   "Generic AutoComplete function to get completion candidates based upon `obj-type'
@@ -1021,8 +946,7 @@ NOTE: returns list of candidates"
             (progn
               (if (> (length element) company-syntcl--cmd-max-len)
                   (setq company-syntcl--cmd-max-len (length element)))
-              (setq cand-complete-opts (cons element cand-complete-opts)))
-          )))
+              (setq cand-complete-opts (cons element cand-complete-opts))))))
     (delete-dups cand-complete-opts)))
 
 (defun company-syntcl--parse-tf-args (opt)
@@ -1050,8 +974,7 @@ NOTE: returns list of candidates"
         (techfile-obj-list '())
         (techfile-complete-opts '())
         (tf-type "")
-        (tf-layer "")
-        )
+        (tf-layer ""))
     (if company-syntcl--debug
         (message "`company-syntcl--techfile-candidates' case-fold-search = <%s>\n`company-syntcl--prefix-start = <%s>" company-syntcl--ignore-case company-syntcl--prefix-start))
     ;; first, check to see if no options entered (prfx = "")
@@ -1068,8 +991,7 @@ NOTE: returns list of candidates"
           ;; else
           (setq tf-type  (company-syntcl--parse-tf-args "-type"))
           (setq tf-layer (company-syntcl--parse-tf-args "-layer"))
-          (setq techfile-obj-list (ht-get tcl-techfile_attr_dict-hash (concat tf-type ":" tf-layer)))
-          )))
+          (setq techfile-obj-list (ht-get tcl-techfile_attr_dict-hash (concat tf-type ":" tf-layer))))))
     (dolist (element techfile-obj-list techfile-complete-opts)
       (if company-syntcl--prefix-start
           (progn
@@ -1082,8 +1004,7 @@ NOTE: returns list of candidates"
             (progn
               (if (> (length element) company-syntcl--cmd-max-len)
                   (setq company-syntcl--cmd-max-len (length element)))
-              (setq techfile-complete-opts (cons element techfile-complete-opts)))
-          )))
+              (setq techfile-complete-opts (cons element techfile-complete-opts))))))
     (delete-dups techfile-complete-opts)))
 
 (defun company-syntcl--candidates (prefix obj-type)
@@ -1110,8 +1031,7 @@ NOTE: returns list of completion candidates"
       (setq obj-complete-opts (company-syntcl--gui-candidates company-syntcl--prfx)))
      ;; all other `obj-type' complete here
      (t
-      (setq obj-complete-opts (company-syntcl--get-candidate-list company-syntcl--prfx obj-type)))
-     )
+      (setq obj-complete-opts (company-syntcl--get-candidate-list company-syntcl--prfx obj-type))))
     (sort obj-complete-opts 'string<)))
 
 
@@ -1142,8 +1062,7 @@ NOTE: returns annotation *string* for each candidate"
       (setq anno (concat (s-pad-left pad-len " " ">") (ht-get tcl-app_options-hash candidate))))
      ((and (string-equal company-syntcl--type "techfile")
            (string-equal company-syntcl--active-cmd company-syntcl--last-completed-word))
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get* tcl-details-hash company-syntcl--active-cmd candidate))))
-     )
+      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get* tcl-details-hash company-syntcl--active-cmd candidate)))))
     anno))
 
 
@@ -1197,8 +1116,7 @@ cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/make-tcl-abbrevs.el ~/<your_emacs_load
              '(company-netlist company-syntcl company-etags))
         (set (make-local-variable 'company-idle-delay) company-netlist--idle-delay)
         (make-tcl-abbrevs)))
-"
-    )
+")
 
 
 ;; misc ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1211,13 +1129,11 @@ cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/make-tcl-abbrevs.el ~/<your_emacs_load
     ;; need to strip off leading '[','('
     (cond
      ((eq ?\[ (string-to-char thing)) (setq thing (substring thing 1)))
-     ((eq ?\( (string-to-char thing)) (setq thing (substring thing 1)))
-     )
+     ((eq ?\( (string-to-char thing)) (setq thing (substring thing 1))))
     ;; ... and trailing ']',')'
     (cond
      ((string-match "]$" thing)       (setq thing (substring thing 0 (1- (string-width thing)))))
-     ((string-match ")$" thing)       (setq thing (substring thing 0 (1- (string-width thing)))))
-     )
+     ((string-match ")$" thing)       (setq thing (substring thing 0 (1- (string-width thing))))))
     (xref-find-definitions thing)))
 
 
@@ -1268,19 +1184,16 @@ type \"M-x customize-group RET company-syntcl RET\" to get list of user-specifie
     (prefix (and (memq major-mode company-syntcl-modes)
                  (or (company-syntcl--prefix) 'stop)))
     (candidates (company-syntcl--candidates arg company-syntcl--type))
-    ;; (meta       (company-syntcl--meta arg))
     (annotation (company-syntcl--annotation arg))
     (post-completion
      (cond
       ((and (string-equal company-syntcl--type "attributes")
             (string-equal company-syntcl--attr-type "class"))
        (company-syntcl--set-attr-class arg)) ; 'arg' is the completed text
-      ((string-equal company-syntcl--type "attributes") (setq company-syntcl--attr-flag "no"))
-      ))
+      ((string-equal company-syntcl--type "attributes") (setq company-syntcl--attr-flag "no"))))
     (no-cache t)
     (ignore-case company-syntcl--ignore-case)
-    (sorted t)
-    ))
+    (sorted t)))
 
 (provide 'company-syntcl)
 ;;; company-syntcl.el ends here

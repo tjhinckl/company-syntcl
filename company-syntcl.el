@@ -260,7 +260,6 @@ set to \"on\" (t) to ignore case for candidate matches"
   :type 'boolean
   :group 'company-syntcl)
 
-;; (setq company-syntcl--idle-delay company-netlist--idle-delay)
 
 (defcustom company-syntcl--idle-delay nil
   "controls delay for idle matching

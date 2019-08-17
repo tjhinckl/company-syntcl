@@ -1,0 +1,30 @@
+* Description
+This package contains two company completion backends, one for
+Synopsys Tcl the other for netlist completion.They can be used
+independently. Both rely on JSON data provided by
+=WriteTclCompleteFiles.tcl= which is hosted in another repo.
+
+
+* Create the JSON data
+Clone the vim based TCL complete repo at
+#+BEGIN_SRC sh
+https://gitlab.devtools.intel.com/cbheitho/TclComplete
+#+END_SRC
+
+Under the tcl directory there is a file =WriteTclCompleteFiles.tcl=.
+This will need to be sourced in a Synopsys shell to generate the JSON
+completion data. See the original repo for full details.
+
+* Usage
+Install [[http://company-mode.github.io/][company mode]] from Melpa. Enable company mode in Tcl buffers or
+globally.
+
+To enable Synopsys completion add the following to your init file
+#+BEGIN_SRC elisp
+  (add-to-list 'company-backends 'company-syntcl)
+#+END_SRC
+
+To enable netlist completion, add the following to your init file
+#+BEGIN_SRC elisp
+  (add-to-list 'company-backends 'company-netlist)
+#+END_SRC

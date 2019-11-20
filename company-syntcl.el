@@ -278,6 +278,11 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
   :type 'boolean
   :group 'company-syntcl)
 
+(defcustom company-syntcl-align-annotation t
+  "Align the annotation string so they are shown as their own column."
+  :type 'boolean
+  :group 'company-syntcl)
+
 (defvar company-syntcl--cmd-max-len 0)  ; used to align annotations
 
 (defvar company-syntcl--attr-flag "") ; will get non-empty value during *-ask-for-attr
@@ -1043,28 +1048,30 @@ NOTE: returns list of completion candidates"
 NOTE: returns annotation *string* for each candidate"
   (if company-syntcl--debug
       (message "`company-syntcl--annotations' args <%s>" candidate))
-  (let ((anno "")
-        (pad-len (- (+ 3 company-syntcl--cmd-max-len) (length candidate))))
-    (cond
-     ((string-equal company-syntcl--type "commands")
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get tcl-descriptions-hash candidate))))
-     ((and (string-equal company-syntcl--type "options")
-           (null (member company-syntcl--active-cmd company-syntcl--cmds-without-details))
-           (not (string-equal "package require" company-syntcl--active-cmd)))
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get* tcl-details-hash company-syntcl--active-cmd candidate))))
-     ((and (string-equal company-syntcl--type "attributes")
-           (not (string-equal company-syntcl--attr-type "class")))
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get* tcl-attributes-hash company-syntcl--attr-class candidate))))
-     ((string-equal company-syntcl--type "iccpp")
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get tcl-iccpp_dict-hash candidate))))
-     ((string-equal company-syntcl--type "env-vars")
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get tcl-environment-hash candidate))))
-     ((string-equal company-syntcl--type "app-options")
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get tcl-app_options-hash candidate))))
-     ((and (string-equal company-syntcl--type "techfile")
-           (string-equal company-syntcl--active-cmd company-syntcl--last-completed-word))
-      (setq anno (concat (s-pad-left pad-len " " ">") (ht-get* tcl-details-hash company-syntcl--active-cmd candidate)))))
-    anno))
+  (when-let
+      ((anno
+        (pcase company-syntcl--type
+          ("commands" (ht-get tcl-descriptions-hash candidate))
+          ("iccpp" (ht-get tcl-iccpp_dict-hash candidate))
+          ("env-vars" (ht-get tcl-environment-hash candidate))
+          ("app-options" (ht-get tcl-app_options-hash candidate))
+          ("options" (when (not (or (member company-syntcl--active-cmd
+                                            company-syntcl--cmds-without-details)
+                                    (equal "package require" company-syntcl--active-cmd)))
+                       (ht-get* tcl-details-hash company-syntcl--active-cmd candidate)))
+          ("attributes" (unless (equal company-syntcl--attr-type
+                                       "class")
+                          (ht-get* tcl-attributes-hash company-syntcl--attr-class candidate)))
+          ("techfile" (when (equal company-syntcl--active-cmd
+                                   company-syntcl--last-completed-word)
+                        (ht-get* tcl-details-hash company-syntcl--active-cmd candidate))))))
+    (unless (string-blank-p anno)
+      (concat (s-repeat (if company-syntcl-align-annotation
+                            (- (+ 3 company-syntcl--cmd-max-len)
+                               (length candidate))
+                          3) " ")
+              anno))))
+
 
 
 ;; setup ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

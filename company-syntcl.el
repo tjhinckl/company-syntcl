@@ -243,11 +243,6 @@
          (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
         (t "/tmp")))
 
-(defcustom company-syntcl--debug nil
-  "enable to see additional info in *Messages* buffer"
-  :type 'boolean
-  :group 'company-syntcl)
-
 (defcustom company-syntcl--prefix-start t
   "character start position for candidate matching (default: \"on\" start match from string beginning)
 set to \"off\" to match anywhere in string"
@@ -431,8 +426,6 @@ NOTE: only read JSON file if *-<type>-hash variable NOT already set
                          "techfile_attr_dict"))
     (dolist (typ my-types)      ; loop thru 'my-types
       (dolist (fl (symbol-value (intern-soft (concat "my-json-" typ)))) ; loop thru *-list or *-hash
-        (if company-syntcl--debug
-            (message "Processing JSON file: %s for var: %s" (concat fl ".json") (concat "tcl-" fl "-" typ)))
         (if (or (null (symbol-value (intern-soft (concat "tcl-" fl "-" typ))))
                 company-syntcl--force-read-json)
             (if (file-exists-p (expand-file-name (concat fl ".json") company-syntcl-dir))
@@ -450,9 +443,7 @@ NOTE: only read JSON file if *-<type>-hash variable NOT already set
                         (replace-match " " nil t))
                       (goto-char (point-min))
                       (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read)))))
-              (message "File %s does not exist in dir %s. Cannot perform Tcl completions." (concat fl ".json") company-syntcl-dir))
-          (if company-syntcl--debug
-              (message "var %s already exists" (intern-soft (concat "tcl-" fl "-" typ)))))))
+              (message "File %s does not exist in dir %s. Cannot perform Tcl completions." (concat fl ".json") company-syntcl-dir)))))
     (message "company-syntcl: end reading JSON files")
     ;; setting up derived variables
     (if (null tcl-namespaces-list)
@@ -469,8 +460,6 @@ NOTE: parses `tcl-g_var_array-list'"
       (if (string-match "^G_ROUTE_TRACK_PATTERNS(" item)
           (progn
             (setq pattern (substring item (1+ (string-match "(" item)) (1- (length item))))
-            (if company-syntcl--debug
-                (message "pattern is %s" pattern))
             (setq pattern-list (cons pattern pattern-list)))))
     (delete-dups pattern-list)))
 
@@ -487,43 +476,27 @@ NOTE: returns string"
          (bol (line-beginning-position))
          (str (buffer-substring-no-properties bol cur-pt))
          (indx (length str)))
-    (if company-syntcl--debug
-        (message "`company-syntcl--find-active-cmd': starting vars:\nindx: %s, bol: %s, str: %s" indx bol str))
     (save-excursion
-      (if company-syntcl--debug
-          (message "`company-syntcl--find-cmd': starting indx= <%s>" indx))
       ;; continue going backward to start of line or first unmatched left bracket
       (while (and (> indx 0) (>= rt-bracket 0))
         (setq char-behind (substring str (1- indx) indx))
-        (if company-syntcl--debug
-            (message "`company-syntcl--find-cmd': char-behind= %s" char-behind))
         (if (string-equal char-behind "]")
             (progn
-              (setq rt-bracket (1+ rt-bracket))
-              (if company-syntcl--debug
-                  (message "`company-syntcl--find-cmd': incrementing rt-bracket= %s" rt-bracket)))
+              (setq rt-bracket (1+ rt-bracket)))
           (if (string-equal char-behind "[")
               (progn
-                (setq rt-bracket (1- rt-bracket))
-                (if company-syntcl--debug
-                    (message "`company-syntcl--find-cmd': decrementing rt-bracket= %s" rt-bracket)))))
+                (setq rt-bracket (1- rt-bracket)))))
         (if (>= rt-bracket 0)      ; keep going back
             (setq indx (1- indx)))
         (backward-char))           ; at 1st unmatched '[' or line start
-      (if company-syntcl--debug
-          (message "`company-syntcl--find-cmd': end of 1st while ==> rt-bracket= <%s>, indx= <%s>" rt-bracket indx))
       ;; move index to right through whitespace until we hit command
       (while (and (< indx (length str)) (string-equal " " (substring str indx (1+ indx))))
         (setq indx (1+ indx)))
-      (if company-syntcl--debug
-          (message "`company-syntcl--find-cmd': end of whitespace after leftmost unmatched bracket/bol: %s" indx))
       ;; move index ahead of possible :: global namespace
       (if (string-equal "::" (substring str indx (let ((end (+ 2 indx)))
                                                    (if (< end (length str))
                                                        end (1+ indx)))))
           (setq indx (+ 2 indx)))
-      (if company-syntcl--debug
-          (message "`company-syntcl--find-cmd': end of namespace: %s" indx))
       (string-match "\\([\\-a-zA-Z0-9:_]+\\)" str indx)  ; here is active command
       (setq company-syntcl--active-cmd (match-string-no-properties 1 str))
       ;; substract 1 from length of str, then do split-string, then take 2nd to last element from list
@@ -533,10 +506,6 @@ NOTE: returns string"
       (setq company-syntcl--last-completed-word
             (nth (1- (length (split-string (substring str 0 (1- (string-width str))))))
                  (split-string (substring str 0 (1- (string-width str)))))))
-    (if company-syntcl--debug
-        (progn
-          (message "`company-syntcl--find-cmd': active-cmd: %s" company-syntcl--active-cmd)
-          (message "`company-syntcl--find-cmd': last-compl-word: %s" company-syntcl--last-completed-word)))
     company-syntcl--active-cmd))
 
 (defun company-syntcl--prefix ()
@@ -546,8 +515,6 @@ and sets variable `company-syntcl--type'
 NOTE: returns string"
   (let ((prfx (company-grab-symbol)))
     (setq company-syntcl--type "")  ; initialize each time `prefix' called
-    (if company-syntcl--debug
-        (message "`company-syntcl--prefix': company-grab-symbol: <%s>" prfx))
     (company-syntcl--find-active-cmd)    ; sets *--active-cmd, *--last-completed-word
     ;; need to strip off leading '[' from prfx (if present)
     ;; ... because '[',']' added to tcl symbol table to enable sending indexed strings to tmux icc2 shell
@@ -557,11 +524,6 @@ NOTE: returns string"
      ((eq ?\( (string-to-char prfx)) (setq prfx (substring prfx 1))))
     (cond                                ; set vars based upon *--active-cmd
      ((string-equal company-syntcl--active-cmd prfx)  (setq company-syntcl--active-cmd ""))) ;; NOTE: only set *--attr-flag if need to prompt for attribute class
-    (if company-syntcl--debug
-        (progn
-          (message "`company-syntcl--prefix': active-cmd = %s" company-syntcl--active-cmd)
-          (message "`company-syntcl--prefix': last-completed-word = %s" company-syntcl--last-completed-word)
-          (message "`company-syntcl--prefix': attr-flag = <%s>" company-syntcl--attr-flag)))
     (if (not (string-equal "" prfx))
         ;; string-to-char returns first char
         (cond
@@ -625,10 +587,6 @@ NOTE: returns string"
         (setq company-syntcl--type "gui"))
        (t
         (setq company-syntcl--type "options"))))
-    (if company-syntcl--debug
-        (progn
-          (message "`company-syntcl--prefix': type = %s" company-syntcl--type)
-          (message "`company-syntcl--prefix': (post) prfx = <%s>" prfx)))
     (if (string-prefix-p "-" prfx)
         (cons prfx t)
       prfx)))
@@ -648,11 +606,6 @@ NOTE: returns string"
         (var-list '())
         (var-name-complt '())
         (cur-point (point)))
-    (if company-syntcl--debug
-        (progn
-          (message "`company-syntcl--scan-buffer-for-var-names' prefix: <%s>" prefix)
-          (message "`company-syntcl--scan-buffer-for-var-names' var-type: <%s>" var-type)
-          (message "`company-syntcl--scan-buffer-for-var-names' cur-point: %s" cur-point)))
     (if (string-equal "var" var-type)
         (setq regex (concat
                      "\\("
@@ -673,15 +626,11 @@ NOTE: returns string"
         (let* ((bol (line-beginning-position))
                (eol (line-end-position))
                (myline (buffer-substring-no-properties bol eol)))
-          (if company-syntcl--debug
-              (message "`company-syntcl--scan-buffer-for-var-names' line: <%s>" myline))
           (goto-char bol)
           (if (or (and (>= cur-point bol) (<= cur-point eol))
                   (string-match re-cmt myline)
                   (string-match "^[[:space:]]*$" myline))
               (progn
-                (if company-syntcl--debug
-                    (message "`company-syntcl--scan-buffer-for-var-names' skipping current line"))
                 (forward-line))     ; skip current line ...
             ;; else ...
             ;; loop to get all vars in line
@@ -691,8 +640,6 @@ NOTE: returns string"
                     (if (string-equal "$" prefix) ; need to add leading '$'
                         (setq var (concat "$" (match-string-no-properties 2)))
                       (setq var (match-string-no-properties 2))) ; do not add leading '$'
-                    (if company-syntcl--debug
-                        (message "`company-syntcl--scan-buffer-for-var-names' match var: %s" var))
                     (if (null (member var var-names))
                         (setq var-names (cons var var-names))))
                 (forward-char)))
@@ -704,8 +651,6 @@ NOTE: returns string"
                   (if (re-search-forward re-proc (line-end-position) t)
                       (progn
                         (setq var-proc (split-string (match-string-no-properties 1) " "))
-                        (if company-syntcl--debug
-                            (message "`company-syntcl--scan-buffer-for-var-names' proc args: %s" var-proc))
                         (dolist (item var-proc)
                           (if (and (null (member item var-names))
                                    (not (string-match "}" item))
@@ -715,8 +660,6 @@ NOTE: returns string"
                   (if (string-match "\\(lassign\\|scan\\)" myline)
                       (progn
                         (setq var-list (reverse (split-string myline " ")))
-                        (if company-syntcl--debug
-                            (message "`company-syntcl--scan-buffer-for-var-names' scan|lassign args: %s" var-list))
                         (dolist (item var-list)
                           (if (and (not (string-match "[]%$}\"\[]" item))
                                    (not (string-match "^[[:space:]]*$" item))
@@ -741,8 +684,6 @@ NOTE: returns list"
       (if (string-match "::" item)
           (progn
             (setq base (replace-regexp-in-string regex "" item))
-            (if company-syntcl--debug
-                (message "`company-syntcl--get-namespaces' item: <%s>  base: <%s>" item base))
             (if (null (member base namespaces))
                 (setq namespaces (cons base namespaces))))))
     (delete-dups namespaces)))
@@ -751,8 +692,6 @@ NOTE: returns list"
   "ask user to specify attribute class, will return attribute candidate list based upon attr-class
 NOTE: returns list"
   (let ((attr-list '()))
-    (if company-syntcl--debug
-        (message "`company-syntcl--ask-for-attr-class' attr-class (init): <%s>" attr-class))
     (if (string-blank-p attr-class)
         (progn
           (setq company-syntcl--attr-type "class")
@@ -809,34 +748,22 @@ NOTE: returns a list of candidates"
     ;; first, check for '-class' (usually during a 'get_defined_attributes' type command)
     (if (string-match "-class" company-syntcl--last-completed-word)
         (progn
-          (if company-syntcl--debug
-              (message "`company-syntcl--attr-candidates' cmpl-typ: object classes"))
           (setq attr-obj-list (ht-keys tcl-attributes-hash)))
       ;; else
       (if (string-match "yes" company-syntcl--attr-flag) ; explicitly triggered by user (keybinding)
           (progn
-            (if company-syntcl--debug
-                (message "`company-syntcl--attr-candidates' cmpl-typ: explicit user trigger - attr func"))
             (setq attr-obj-list (company-syntcl--ask-for-attr-class company-syntcl--attr-class)))
         ;; else
         (if (string-match "\\." prfx)   ; dotted attribute format (like cell.name, pin.cell.origin)
             (progn
-              (if company-syntcl--debug
-                  (message "`company-syntcl--attr-candidates' cmpl-typ: dotted attribute"))
               (setq split-prfx (split-string prfx "\\."))
               ;; prfx            split-prfx
               ;; "cell."         ("cell" "")       - if prfx ends in ".", last element is ""
               ;; "cell.name"     ("cell" "name")
               (setq company-syntcl--attr-class (car (last (butlast split-prfx)))) ; gets 2nd-to-last list element
-              (if company-syntcl--debug
-                  (progn
-                    (message "`company-syntcl--attr-candidates' attr-class: <%s>" company-syntcl--attr-class)
-                    (message "`company-syntcl--attr-candidates' split-prfx: <%s>" split-prfx)))
               (if (string-match "\\.$" prfx) ; dotted attribute ends with "."
                   (setq base prfx)
                 (setq base (concat (mapconcat 'identity (butlast split-prfx) ".") ".")))
-              (if company-syntcl--debug
-                  (message "`company-syntcl--attr-candidates' base: <%s>" base))
               ;; prepend all attr completion candidates with base (i.e. "cell."candidate)
               (setq attr-obj-list (mapcar (lambda (c) (concat base c))
                                           (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class)))))
@@ -845,26 +772,17 @@ NOTE: returns a list of candidates"
           (if (and (string-match "^get_" company-syntcl--active-cmd)
                    (string-equal "-filter" company-syntcl--last-completed-word))
               (progn
-                (if company-syntcl--debug
-                    (message "`company-syntcl--attr-candidates' cmpl-typ: get_XXXX -filter"))
                 (setq company-syntcl--attr-class (company-syntcl--get-obj-class company-syntcl--active-cmd))
                 (setq attr-obj-list (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class))))
             ;; else
             ;; try to derive object class based upon '-class' argument
             (if (string-match "-class" myline)
                 (progn
-                  (if company-syntcl--debug
-                      (message "`company-syntcl--attr-candidates' cmpl-typ: -class argument"))
                   (setq split-line (split-string myline))
                   (setq idx (1+ (cl-position "-class" split-line :test 'equal)))
                   (setq company-syntcl--attr-class (nth idx split-line))
-                  (setq attr-obj-list (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class)))
-                  (if company-syntcl--debug
-                      (message "`company-syntcl--attr-candidates' attr-class: <%s>" company-syntcl--attr-class)))
-              ;; else
+                  (setq attr-obj-list (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class)))) ;; else
               ;; need to ask for attribute
-              (if company-syntcl--debug
-                  (message "`company-syntcl--attr-candidates' cmpl-typ: Ask For Attribute"))
               (setq attr-obj-list (company-syntcl--ask-for-attr-class company-syntcl--attr-class)))))))
 
     (dolist (item attr-obj-list)
@@ -885,8 +803,6 @@ NOTE: returns a list of candidates"
 (defun company-syntcl--gui-candidates (prfx)
   "Candidates for gui_annotation command (color,pattern,linestyles,symbol-type)
 NOTE: returns list of candidates"
-  (if company-syntcl--debug
-      (message "`company-syntcl--gui-candidates' arg: prfx=<%s>" prfx))
   (let ((cand-obj-list '())
         (cand-complete-opts '()))
     (cond
@@ -918,13 +834,9 @@ NOTE: returns list of candidates"
 (defun company-syntcl--get-candidate-list (prfx obj-type)
   "Generic AutoComplete function to get completion candidates based upon `obj-type'
 NOTE: returns list of candidates"
-  (if company-syntcl--debug
-      (message "`company-syntcl--get-candidate-list' args: prfx=<%s>, obj-type=<%s>" prfx obj-type))
   (let ((case-fold-search company-syntcl--ignore-case)
         (cand-obj-list '())
         (cand-complete-opts '()))
-    (if company-syntcl--debug
-        (message "`company-syntcl--get-candidate-list' case-fold-search = <%s>\n`company-syntcl--prefix-start = <%s>" company-syntcl--ignore-case company-syntcl--prefix-start))
     (cond
      ((string-equal "commands" obj-type) (setq cand-obj-list tcl-commands-list))
      ((string-equal "designs"  obj-type) (setq cand-obj-list tcl-designs-list))
@@ -968,23 +880,17 @@ NOTE: returns string or empty string"
            (val ""))
       (if (string-match (concat opt " \\([[:alnum:]]+\\) ") str)
           (setq val (match-string-no-properties 1 str)))
-      (if company-syntcl--debug
-          (message "`company-syntcl--parse-tf-args': val: <%s>" val))
       val)))
 
 (defun company-syntcl--techfile-candidates (prfx)
   "AutoComplete function for 'tech::get_techfile_info'
 Original source: ./TclComplete/techfile_types.json, techfile_attr_dict.json, techfile_layer_dict.json
 NOTE: returns list of candidates"
-  (if company-syntcl--debug
-      (message "`company-syntcl--techfile-candidates' gets <%s>" prfx))
   (let ((case-fold-search company-syntcl--ignore-case)
         (techfile-obj-list '())
         (techfile-complete-opts '())
         (tf-type "")
         (tf-layer ""))
-    (if company-syntcl--debug
-        (message "`company-syntcl--techfile-candidates' case-fold-search = <%s>\n`company-syntcl--prefix-start = <%s>" company-syntcl--ignore-case company-syntcl--prefix-start))
     ;; first, check to see if no options entered (prfx = "")
     (if (and (string-equal "" prfx)
              (string-equal company-syntcl--active-cmd company-syntcl--last-completed-word)) ; "tech::get_techfile_info "
@@ -1019,12 +925,8 @@ NOTE: returns list of candidates"
   "Processes auto-complete prefix to generate completion candidates.
 Calls specific functions to get candidates based upon `obj-type'
 NOTE: returns list of completion candidates"
-  (if company-syntcl--debug
-      (message "`company-syntcl--candidates' args <%s> <%s>" prefix obj-type))
-  ;;  (setq case-fold-search nil) ; case-sensitive searches
   (let ((company-syntcl--prfx prefix)
         (obj-complete-opts '()))
-    ;;  (setq company-syntcl--blk company-syntcl-top-blk)
     (setq company-syntcl--cmd-max-len 0)  ; reset here
     (cond
      ((string-equal obj-type "var-names")
@@ -1048,8 +950,6 @@ NOTE: returns list of completion candidates"
 (defun company-syntcl--annotation (candidate)
   "annotation for TCL completion candidates
 NOTE: returns annotation *string* for each candidate"
-  (if company-syntcl--debug
-      (message "`company-syntcl--annotations' args <%s>" candidate))
   (when-let
       ((anno
         (pcase company-syntcl--type

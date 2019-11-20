@@ -518,7 +518,9 @@ NOTE: returns string"
       (if company-syntcl--debug
           (message "`company-syntcl--find-cmd': end of whitespace after leftmost unmatched bracket/bol: %s" indx))
       ;; move index ahead of possible :: global namespace
-      (if (string-equal "::" (substring str indx (+ 2 indx)))
+      (if (string-equal "::" (substring str indx (let ((end (+ 2 indx)))
+                                                   (if (< end (length str))
+                                                       end (1+ indx)))))
           (setq indx (+ 2 indx)))
       (if company-syntcl--debug
           (message "`company-syntcl--find-cmd': end of namespace: %s" indx))

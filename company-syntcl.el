@@ -482,7 +482,7 @@ NOTE: returns string"
       ;; move index ahead of possible :: global namespace
       (if (string-equal "::" (substring str indx (let ((end (+ 2 indx)))
                                                    (if (< end (length str))
-                                                       end (1+ indx)))))
+                                                       end indx))))
           (setq indx (+ 2 indx)))
       (string-match "\\([\\-a-zA-Z0-9:_]+\\)" str indx)  ; here is active command
       (setq company-syntcl--active-cmd (match-string-no-properties 1 str))
@@ -500,7 +500,7 @@ NOTE: returns string"
 Tries to determine type of completion (variable, command, attribute, option)
 and sets variable `company-syntcl--type'
 NOTE: returns string"
-  (let ((prfx (company-grab-symbol)))
+  (let ((prfx (or (company-grab-symbol) "")))
     (setq company-syntcl--type "")  ; initialize each time `prefix' called
     (company-syntcl--find-active-cmd)    ; sets *--active-cmd, *--last-completed-word
     ;; need to strip off leading '[' from prfx (if present)
@@ -509,8 +509,9 @@ NOTE: returns string"
     (cond
      ((eq ?\[ (string-to-char prfx)) (setq prfx (substring prfx 1)))
      ((eq ?\( (string-to-char prfx)) (setq prfx (substring prfx 1))))
-    (cond                                ; set vars based upon *--active-cmd
-     ((string-equal company-syntcl--active-cmd prfx)  (setq company-syntcl--active-cmd ""))) ;; NOTE: only set *--attr-flag if need to prompt for attribute class
+    (when (or (null company-syntcl--active-cmd)
+              (string-equal company-syntcl--active-cmd prfx))
+      (setq company-syntcl--active-cmd "")) ;; NOTE: only set *--attr-flag if need to prompt for attribute class
     (if (not (string-equal "" prfx))
         ;; string-to-char returns first char
         (cond

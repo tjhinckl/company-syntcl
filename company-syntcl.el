@@ -119,7 +119,6 @@
 ;; Then, copy these 3 files to your Emacs load path:
 ;; cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/company-netlist.el  ~/<your_emacs_load_path>
 ;; cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/company-syntcl.el   ~/<your_emacs_load_path>
-;; cp /nfs/pdx/home/fcreed/.emacs.d/my-elisp/make-tcl-abbrevs.el ~/<your_emacs_load_path>
 
 ;; and add the following lines to your Emacs init file:
 ;; UPDATE: 2018jun19 - following 2 lines are NOT necesssary (`company-netlist', `company-syntcl' functions autoloaded)
@@ -243,31 +242,19 @@
          (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
         (t "/tmp")))
 
-(defcustom company-syntcl--prefix-start t
+(defcustom company-syntcl-prefix-start t
   "character start position for candidate matching (default: \"on\" start match from string beginning)
 set to \"off\" to match anywhere in string"
   :type 'boolean
   :group 'company-syntcl)
 
-(defcustom company-syntcl--ignore-case nil
+(defcustom company-syntcl-ignore-case nil
   "switch to control case-sensitive matching (default: \"off\" means case-sensitive matches)
 set to \"on\" (t) to ignore case for candidate matches"
   :type 'boolean
   :group 'company-syntcl)
 
-
-(defcustom company-syntcl--idle-delay nil
-  "controls delay for idle matching
-default (\"nil\") means *NO* idle triggering of NC completion.
-This means you must explicitly trigger netlist completion.
-Set a delay (in seconds) to auto-trigger Netlist completion.
-NOTE: better to keep at default (nil) to avoid wrong completion type"
-  :type '(choice
-          (const :tag "never (nil)" nil)
-          (number :tag "seconds"))
-  :group 'company-syntcl)
-
-(defcustom company-syntcl--force-read-json nil
+(defcustom company-syntcl-force-read-json nil
   "force reading JSON files (default \"nil\")
 set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
   :type 'boolean
@@ -329,8 +316,6 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 (defvar tcl-details-hash nil)
 (defvar tcl-attributes-hash nil)
 (defvar tcl-techfile_attr_dict-hash nil)
-(defvar my-json-hash nil)
-(defvar my-json-list nil)
 (defvar tcl-track-pattern-list nil)
 
 ;; check for member of list, rather than long regexes (easier maintenance)
@@ -388,55 +373,26 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 
 NOTE: only read JSON file if *-<type>-hash variable NOT already set
 "
-  (let* ((json-object-type 'hash-table)
-         (json-array-type  'list)
-         (json-key-type    'string)
-         (my-types '("list" "hash")))
+  (let ((json-object-type 'hash-table)
+        (json-array-type  'list)
+        (json-key-type    'string)
+        (my-types '(("list" . ("commands" "designs" "g_vars" "g_var_arrays" "iccpp" "app_vars" "regexp_char_classes" "packages" "techfile_types"))
+                    ("hash" . ("descriptions" "options" "app_options" "environment" "iccpp_dict" "techfile_layer_dict" "details" "attributes" "techfile_attr_dict")))))
     (message "company-syntcl: begin reading JSON files")
-    (setq my-json-list '("commands"
-                         "designs"
-                         "g_vars"
-                         "g_var_arrays"
-                         "iccpp"
-                         "app_vars"
-                         "regexp_char_classes"
-                         "packages"
-                         "techfile_types"))
-    (setq my-json-hash '("descriptions"
-                         "options"
-                         "app_options"
-                         "environment"
-                         "iccpp_dict"
-                         "techfile_layer_dict"
-                         "details"
-                         "attributes"
-                         "techfile_attr_dict"))
     (dolist (typ my-types)      ; loop thru 'my-types
-      (dolist (fl (symbol-value (intern-soft (concat "my-json-" typ)))) ; loop thru *-list or *-hash
-        (if (or (null (symbol-value (intern-soft (concat "tcl-" fl "-" typ))))
-                company-syntcl--force-read-json)
-            (if (file-exists-p (expand-file-name (concat fl ".json") company-syntcl-dir))
-                (if (version< "26.1" emacs-version)
-                    (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read-file (expand-file-name (concat fl ".json") company-syntcl-dir)))
-                  ;; else, need to test for "broken" JSON constructs in emacs 26.1 (i.e. embedded tabs)
-                  (if (string-blank-p (shell-command-to-string (concat "grep -P '\".*\t.*\"' " (expand-file-name (concat fl ".json") company-syntcl-dir))))
-                      (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read-file (expand-file-name (concat fl ".json") company-syntcl-dir)))
-                    ;; else, need to fix!
-                    (message "File %s has embedded tabs, which breaks Emacs %s JSON parser" (concat fl ".json") emacs-version)
-                    (with-temp-buffer
-                      (insert-file-contents (expand-file-name (concat fl ".json") company-syntcl-dir))
-                      (goto-char (point-min))
-                      (while (search-forward "	" nil t) ; emacs 26 json parser does not like embedded tabs! (C-q <tab> to insert!)
-                        (replace-match " " nil t))
-                      (goto-char (point-min))
-                      (set (intern-soft (concat "tcl-" fl "-" typ)) (json-read)))))
-              (message "File %s does not exist in dir %s. Cannot perform Tcl completions." (concat fl ".json") company-syntcl-dir)))))
+      (dolist (fl (cdr typ)) ; loop thru *-list or *-hash
+        (let ((table (intern-soft (concat "tcl-" fl "-" (car typ)))))
+          (when (or (null (symbol-value table))
+                    company-syntcl-force-read-json)
+            (set table (json-read-file (expand-file-name (concat fl ".json")
+                                                         company-syntcl-dir)))))))
     (message "company-syntcl: end reading JSON files")
+    (setq company-syntcl-force-read-json nil)
     ;; setting up derived variables
-    (if (null tcl-namespaces-list)
-        (setq tcl-namespaces-list (company-syntcl--get-namespaces)))
-    (if (null tcl-track-pattern-list)
-        (setq tcl-track-pattern-list (company-syntcl--get-track-patterns)))))
+    (unless tcl-namespaces-list
+      (setq tcl-namespaces-list (company-syntcl--get-namespaces)))
+    (unless tcl-track-pattern-list
+      (setq tcl-track-pattern-list (company-syntcl--get-track-patterns)))))
 
 (defun company-syntcl--get-track-patterns ()
   "get list of track patterns from G_ROUTE_TRACK_PATTERNS var
@@ -459,7 +415,7 @@ NOTE: returns string"
   (interactive)
   (let* ((rt-bracket 0)
          (cur-pt (point))
-         (char-behind)
+         char-behind
          (bol (line-beginning-position))
          (str (buffer-substring-no-properties bol cur-pt))
          (indx (length str)))
@@ -679,22 +635,21 @@ NOTE: returns list"
 (defun company-syntcl--ask-for-attr-class (attr-class)
   "ask user to specify attribute class, will return attribute candidate list based upon attr-class
 NOTE: returns list"
-  (let ((attr-list '()))
-    (if (string-blank-p attr-class)
-        (progn
-          (setq company-syntcl--attr-type "class")
-          (message "Listing attribute classes ...")
-          (setq attr-list (ht-keys tcl-attributes-hash)))
-      ;; else
-      (if (y-or-n-p (format "Current attribute class is <%s>. Enter 'y' to keep, 'n' to change." company-syntcl--attr-class))
-          (progn
-            (setq company-syntcl--attr-type "option")
-            (message "Listing options for attribute type <%s>" company-syntcl--attr-class)
-            (setq attr-list (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class))))
-        ;; else
-        (setq company-syntcl--attr-type "class")
-        (setq attr-list (ht-keys tcl-attributes-hash))))
-    (delete-dups attr-list)))
+  (delete-dups
+   (if (string-blank-p attr-class)
+       (progn
+         (setq company-syntcl--attr-type "class")
+         (message "Listing attribute classes ...")
+         (ht-keys tcl-attributes-hash))
+     ;; else
+     (if (y-or-n-p (format "Current attribute class is <%s>. Enter 'y' to keep, 'n' to change." company-syntcl--attr-class))
+         (progn
+           (setq company-syntcl--attr-type "option")
+           (message "Listing options for attribute type <%s>" company-syntcl--attr-class)
+           (ht-keys (ht-get tcl-attributes-hash company-syntcl--attr-class)))
+       ;; else
+       (setq company-syntcl--attr-type "class")
+       (ht-keys tcl-attributes-hash)))))
 
 (defun company-syntcl--set-attr-class (match)
   "sets variable `company-syntcl--attr-class', which will be used to select relevant options for attribute commands
@@ -727,12 +682,12 @@ NOTE: returns a list of candidates"
   (let* ((bol (line-beginning-position))
          (eol (point))
          (myline (buffer-substring-no-properties bol eol))
-         (attr-obj-list '())
-         (attr-complete-opts '())
+         attr-obj-list
+         attr-complete-opts
          (split-prfx "")
          (split-line "")
          (base "")
-         (idx))
+         idx)
     ;; first, check for '-class' (usually during a 'get_defined_attributes' type command)
     (if (string-match "-class" company-syntcl--last-completed-word)
         (progn
@@ -774,7 +729,7 @@ NOTE: returns a list of candidates"
               (setq attr-obj-list (company-syntcl--ask-for-attr-class company-syntcl--attr-class)))))))
 
     (dolist (item attr-obj-list)
-      (if company-syntcl--prefix-start
+      (if company-syntcl-prefix-start
           (progn
             (if (eq 0 (string-match prfx item))
                 (progn
@@ -791,21 +746,16 @@ NOTE: returns a list of candidates"
 (defun company-syntcl--gui-candidates (prfx)
   "Candidates for gui_annotation command (color,pattern,linestyles,symbol-type)
 NOTE: returns list of candidates"
-  (let ((cand-obj-list '())
-        (cand-complete-opts '()))
-    (cond
-     ((string-equal "-color" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-colors))
-     ((string-equal "-pattern" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-patterns))
-     ((string-equal "-symbol_type" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-symbol-types))
-     ((string-equal "-type" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-types))
-     ((string-equal "-line_style" company-syntcl--last-completed-word)
-      (setq cand-obj-list tcl-gui-linestyles)))
+  (let ((cand-obj-list
+         (pcase company-syntcl--last-completed-word
+           ("-color" tcl-gui-colors)
+           ("-pattern" tcl-gui-patterns)
+           ("-symbol_type" tcl-gui-symbol-types)
+           ("-type" tcl-gui-types)
+           ("-line_style" tcl-gui-linestyles)))
+        cand-complete-opts)
     (dolist (element cand-obj-list cand-complete-opts)
-      (if company-syntcl--prefix-start
+      (if company-syntcl-prefix-start
           (progn
             (if (eq 0 (string-match prfx element))
                 (progn
@@ -822,28 +772,25 @@ NOTE: returns list of candidates"
 (defun company-syntcl--get-candidate-list (prfx obj-type)
   "Generic AutoComplete function to get completion candidates based upon `obj-type'
 NOTE: returns list of candidates"
-  (let ((case-fold-search company-syntcl--ignore-case)
-        (cand-obj-list '())
-        (cand-complete-opts '()))
-    (cond
-     ((string-equal "commands" obj-type) (setq cand-obj-list tcl-commands-list))
-     ((string-equal "designs"  obj-type) (setq cand-obj-list tcl-designs-list))
-     ((and (string-equal "gvars" obj-type) ;check for g_var arrays first
-           (string-match "(" prfx))
-      (setq cand-obj-list tcl-g_var_arrays-list))
-     ((string-equal "gvars"        obj-type) (setq cand-obj-list tcl-g_vars-list))
-     ((string-equal "app-vars"     obj-type) (setq cand-obj-list tcl-app_vars-list))
-     ((string-equal "namespaces"   obj-type) (setq cand-obj-list tcl-namespaces-list))
-     ((string-equal "packages"     obj-type) (setq cand-obj-list tcl-packages-list))
-     ((string-equal "options"      obj-type) (setq cand-obj-list (ht-get  tcl-options-hash company-syntcl--active-cmd)))
-     ((string-equal "app-options"  obj-type) (setq cand-obj-list (ht-keys tcl-app_options-hash )))
-     ((string-equal "env-vars"     obj-type) (setq cand-obj-list (ht-keys tcl-environment-hash )))
-     ((string-equal "iccpp"        obj-type) (setq cand-obj-list (ht-keys tcl-iccpp_dict-hash )))
-     ((string-equal "two-word-opt" obj-type) (setq cand-obj-list (ht-get tcl-options-hash (concat company-syntcl--active-cmd " " company-syntcl--last-completed-word))))
-     ((string-equal "track-patterns"   obj-type) (setq cand-obj-list tcl-track-pattern-list))
-     )
+  (let ((case-fold-search company-syntcl-ignore-case)
+        (cand-obj-list
+         (pcase obj-type
+           ("commands"       tcl-commands-list)
+           ("designs"        tcl-designs-list)
+           ("gvars"          tcl-g_vars-list)
+           ("app-vars"       tcl-app_vars-list)
+           ("namespaces"     tcl-namespaces-list)
+           ("packages"       tcl-packages-list)
+           ("track-patterns" tcl-track-pattern-list)
+           ("options"        (ht-get  tcl-options-hash company-syntcl--active-cmd))
+           ("app-options"    (ht-keys tcl-app_options-hash))
+           ("env-vars"       (ht-keys tcl-environment-hash))
+           ("iccpp"          (ht-keys tcl-iccpp_dict-hash))
+           ("two-word-opt"   (ht-get tcl-options-hash (concat company-syntcl--active-cmd " " company-syntcl--last-completed-word)))
+           ("gvars"          (when (equal "(" prfx) tcl-g_var_arrays-list))))  ;check for g_var arrays first
+        cand-complete-opts)
     (dolist (element cand-obj-list cand-complete-opts)
-      (if company-syntcl--prefix-start
+      (if company-syntcl-prefix-start
           (progn
             (if (eq 0 (string-match prfx element))
                 (progn
@@ -874,7 +821,7 @@ NOTE: returns string or empty string"
   "AutoComplete function for 'tech::get_techfile_info'
 Original source: ./TclComplete/techfile_types.json, techfile_attr_dict.json, techfile_layer_dict.json
 NOTE: returns list of candidates"
-  (let ((case-fold-search company-syntcl--ignore-case)
+  (let ((case-fold-search company-syntcl-ignore-case)
         (techfile-obj-list '())
         (techfile-complete-opts '())
         (tf-type "")
@@ -895,7 +842,7 @@ NOTE: returns list of candidates"
           (setq tf-layer (company-syntcl--parse-tf-args "-layer"))
           (setq techfile-obj-list (ht-get tcl-techfile_attr_dict-hash (concat tf-type ":" tf-layer))))))
     (dolist (element techfile-obj-list techfile-complete-opts)
-      (if company-syntcl--prefix-start
+      (if company-syntcl-prefix-start
           (progn
             (if (eq 0 (string-match prfx element))
                 (progn
@@ -1077,7 +1024,7 @@ type \"M-x customize-group RET company-syntcl RET\" to get list of user-specifie
        (company-syntcl--set-attr-class arg)) ; 'arg' is the completed text
       ((string-equal company-syntcl--type "attributes") (setq company-syntcl--attr-flag "no"))))
     (no-cache t)
-    (ignore-case company-syntcl--ignore-case)))
+    (ignore-case company-syntcl-ignore-case)))
 
 (provide 'company-syntcl)
 ;;; company-syntcl.el ends here

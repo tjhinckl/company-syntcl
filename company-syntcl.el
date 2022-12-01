@@ -622,7 +622,9 @@ NOTE: returns string"
         (progn
           (message "`company-syntcl--prefix': type = %s" company-syntcl--type)
           (message "`company-syntcl--prefix': (post) prfx = <%s>" prfx)))
-    prfx))
+    (if (string-prefix-p "-" prfx)
+        (cons prfx t)
+      prfx)))
 
 
 ;; candidate parsing ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -912,24 +912,14 @@ NOTE: returns list of candidates"
   "Processes auto-complete prefix to generate completion candidates.
 Calls specific functions to get candidates based upon `obj-type'
 NOTE: returns list of completion candidates"
-  (let ((company-syntcl--prfx prefix)
-        (obj-complete-opts '()))
-    (setq company-syntcl--cmd-max-len 0)  ; reset here
-    (cond
-     ((string-equal obj-type "var-names")
-      (setq obj-complete-opts (company-syntcl--scan-buffer-for-var-names company-syntcl--prfx "var")))
-     ((string-equal obj-type "array-names")
-      (setq obj-complete-opts (company-syntcl--scan-buffer-for-var-names company-syntcl--prfx "array")))
-     ((string-equal obj-type "attributes")
-      (setq obj-complete-opts (company-syntcl--attr-candidates company-syntcl--prfx)))
-     ((string-equal obj-type "techfile")
-      (setq obj-complete-opts (company-syntcl--techfile-candidates company-syntcl--prfx)))
-     ((string-equal obj-type "gui")
-      (setq obj-complete-opts (company-syntcl--gui-candidates company-syntcl--prfx)))
-     ;; all other `obj-type' complete here
-     (t
-      (setq obj-complete-opts (company-syntcl--get-candidate-list company-syntcl--prfx obj-type))))
-    (sort obj-complete-opts 'string<)))
+  (setq company-syntcl--cmd-max-len 0)  ; reset here
+  (pcase obj-type
+    ("var-names" (company-syntcl--scan-buffer-for-var-names prefix "var"))
+    ("array-names" (company-syntcl--scan-buffer-for-var-names prefix "array"))
+    ("attributes" (company-syntcl--attr-candidates prefix))
+    ("techfile" (company-syntcl--techfile-candidates prefix))
+    ("gui" (company-syntcl--gui-candidates prefix))
+    (_ (company-syntcl--get-candidate-list prefix obj-type))))
 
 
 ;; annotation  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1086,8 +1076,7 @@ type \"M-x customize-group RET company-syntcl RET\" to get list of user-specifie
        (company-syntcl--set-attr-class arg)) ; 'arg' is the completed text
       ((string-equal company-syntcl--type "attributes") (setq company-syntcl--attr-flag "no"))))
     (no-cache t)
-    (ignore-case company-syntcl--ignore-case)
-    (sorted t)))
+    (ignore-case company-syntcl--ignore-case)))
 
 (provide 'company-syntcl)
 ;;; company-syntcl.el ends here

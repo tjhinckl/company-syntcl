@@ -237,11 +237,11 @@
 ;; if running $WARD/dp/user_scripts/WriteTclCompleteFiles.tcl manually, result will be in $WARD/TclComplete
 ;; else, they will be in $WARD/dp/user_scripts/TclComplete (under git control)
 (defvar company-syntcl-dir
-  (progn (((file-directory-p (expand-file-name "TclComplete" company-syntcl-ward))
-           (expand-file-name "TclComplete" company-syntcl-ward))
-          ((file-directory-p (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
-           (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
-          (t "/tmp"))))
+  (cond ((file-directory-p (expand-file-name "TclComplete" company-syntcl-ward))
+         (expand-file-name "TclComplete" company-syntcl-ward))
+        ((file-directory-p (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
+         (expand-file-name (concat "dp/user_scripts/" "TclComplete") company-syntcl-ward))
+        (t "/tmp")))
 
 (defcustom company-syntcl--debug nil
   "enable to see additional info in *Messages* buffer"
@@ -1178,8 +1178,7 @@ type \"M-x customize-group RET company-syntcl RET\" to get list of user-specifie
   (cl-case command
     (interactive (company-begin-backend 'company-syntcl))
     (init (when (memq major-mode company-syntcl-modes)
-            (company-syntcl--read-json-files)
-            ))
+            (company-syntcl--read-json-files)))
     (prefix (and (memq major-mode company-syntcl-modes)
                  (or (company-syntcl--prefix) 'stop)))
     (candidates (company-syntcl--candidates arg company-syntcl--type))

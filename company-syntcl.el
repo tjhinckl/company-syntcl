@@ -288,19 +288,6 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 
 (defvar company-syntcl--type nil)       ; default, set based on completion prefix...
 
-;; these commands have no entries in ./TclComplete/details.vim (need to skip annotation)
-(defvar company-syntcl--cmds-without-details
-  '("array"
-    "binary"
-    "chan"
-    "dict"
-    "expr"
-    "file"
-    "info"
-    "namespace"
-    "package"
-    "string"))
-
 (defvar company-syntcl--last-completed-word "")
 
 (defun company-syntcl--attr-completion ()
@@ -322,16 +309,16 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 ;; make byte-compiler happy!
 ;; list vars
 (defvar tcl-commands-list nil)
-(defvar tcl-namespaces-list nil)    ; added 2018/07/13
+(defvar tcl-namespaces-list nil)
 (defvar tcl-designs-list nil)
 (defvar tcl-g_vars-list nil)
 (defvar tcl-g_var_arrays-list nil)
 (defvar tcl-iccpp-list nil)
 (defvar tcl-techfile_types-list nil)
-(defvar tcl-app_vars-list nil)      ; added 2018/06/28
-(defvar tcl-regexp_char_classes-list nil) ; added 2018/07/12
-(defvar tcl-packages-list nil)        ; added 2018/07/12
-(defvar tcl-namespaces-list nil)      ; added 2018/07/12
+(defvar tcl-app_vars-list nil)
+(defvar tcl-regexp_char_classes-list nil)
+(defvar tcl-packages-list nil)
+(defvar tcl-namespaces-list nil)
 ;; hash tables
 (defvar tcl-descriptions-hash nil)
 (defvar tcl-options-hash nil)
@@ -344,9 +331,9 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 (defvar tcl-techfile_attr_dict-hash nil)
 (defvar my-json-hash nil)
 (defvar my-json-list nil)
-(defvar tcl-track-pattern-list nil)         ; added 2018/10/08
+(defvar tcl-track-pattern-list nil)
 
-;; added 2018/07/17 - check for member of list, rather than long regexes (easier maintenance)
+;; check for member of list, rather than long regexes (easier maintenance)
 (defvar tcl-attr-funcs
   '("get_attribute" "set_attribute" "filter_collection" "get_defined_attributes"))
 (defvar tcl-gvar-funcs
@@ -360,7 +347,7 @@ set to \"on\" (t) to force (i.e. if JSON files change on updated database)"
 (defvar tcl-app-opt-funcs
   '("get_app_options" "set_app_options" "report_app_options" "reset_app_options" "get_app_option_value"))
 
-;; added 2018/10/08 - lists of colors, patterns, line styles for gui annotations
+;; lists of colors, patterns, line styles for gui annotations
 (defvar tcl-gui-colors '("white" "red" "orange" "yellow" "green" "blue" "purple" "light_red" "light_orange" "light_yellow" "light_green" "light_blue" "light_purple"))
 (defvar tcl-gui-patterns '("BDDiagPattern" "CrossPattern" "Dense1Pattern" "Dense2Pattern" "Dense3Pattern" "Dense4Pattern" "Dense5Pattern" "Dense6Pattern" "Dense7Pattern" "DiagCrossPattern" "FDiagPattern" "kHorPattern" "NoBrush" "SolidPattern" "VerPattern"))
 (defvar tcl-gui-types '("arrow" "line" "polygon" "polyline" "rectangle" "ruler" "symbol" "text"))
@@ -957,9 +944,7 @@ NOTE: returns annotation *string* for each candidate"
           ("iccpp" (ht-get tcl-iccpp_dict-hash candidate))
           ("env-vars" (ht-get tcl-environment-hash candidate))
           ("app-options" (ht-get tcl-app_options-hash candidate))
-          ("options" (when (not (or (member company-syntcl--active-cmd
-                                            company-syntcl--cmds-without-details)
-                                    (equal "package require" company-syntcl--active-cmd)))
+          ("options" (unless (equal "package require" company-syntcl--active-cmd)
                        (ht-get* tcl-details-hash company-syntcl--active-cmd candidate)))
           ("attributes" (unless (equal company-syntcl--attr-type
                                        "class")
